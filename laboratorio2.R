@@ -8,6 +8,9 @@ library(corrplot)
 library(debug_contr_error2)
 library(car)
 library(ipred)
+library(splitstackshape)
+library(class)
+library(caret)
 
 # Datos de entrenamiento provistos por kaggle
 datos <- read.csv("train.csv")
@@ -152,3 +155,80 @@ datos_prueba_kaggle$prediccion <- predic_prueba
 
 #Se analizan componentes estadisticos de la predicción
 summary(datos_prueba_kaggle$prediccion)
+
+#Pregunta 6
+#------------
+
+#0 = bajo, 1 = medio, 2 = alto
+datos$clasificacion <- 0
+datos$clasificacion <- apply(datos, 1, function(x) {ifelse(datos$SalePrice < 130000, 0,datos$clasificacion )})
+datos$clasificacion <- apply(datos, 1, function(x) {ifelse(datos$SalePrice > 130000 & datos$SalePrice < 215000,1,datos$clasificacion )})
+datos$clasificacion <- apply(datos, 1, function(x) {ifelse(datos$SalePrice > 215000,2,datos$clasificacion )})
+
+# Pregunta 7
+# -----------
+
+#Utilización library(splitstackshape)
+set.seed(5)
+entrenamiento_estratificado <- stratified(datos, c("SalePrice"), .55)
+prueba_estratificado <- stratified(datos, c("SalePrice"), .45)
+
+
+# Pregunta 8
+# ----------
+nums_estra<-dplyr::select_if(entrenamiento_estratificado, is.numeric)
+nums_estra.noNa <- nums_estra[complete.cases(nums_estra),]
+nums_prueba_estra<-dplyr::select_if(prueba_estratificado, is.numeric)
+nums_prueba_estra.noNa <- nums_prueba_estra[complete.cases(nums_prueba_estra),]
+
+predic_knn<-knn(nums_estra.noNa,nums_prueba_estra.noNa,as.factor(nums_estra.noNa$clasificacion),k=4)
+cfm<-confusionMatrix(as.factor(nums_prueba_estra.noNa$clasificacion),predic_knn)
+
+# Pregunta 9
+# ----------
+
+#Con caret usando validaci?n cruzada -- codigo de ayuda proporcionado en clase
+# set.seed(123)
+# trctrl <- trainControl(method = "repeatedcv",
+#                        number = 10,
+#                        repeats = 3)
+# 
+# trainSet$am<-as.factor(trainSet$am)
+# testSet$am<-as.factor(testSet$am)
+# 
+# knnTrain <- train(am ~., data = trainSet, method = "knn",
+#                   trControl=trctrl,
+#                   preProcess = c("center", "scale"), tuneLength=10)
+# predknn<-predict(knnTrain,newdata = testSet[,c(1:8,10:11)])
+# summary(knnTrain)
+# cfm<-confusionMatrix(as.factor(testSet$am),predKnn)
+# cfm
+
+set.seed(32)
+trctrl <- trainControl(method = "repeatedcv",
+                       number = 10,
+                       repeats = 3)
+
+nums_estra.noNa$clasificacion<-as.factor(nums_estra.noNa$clasificacion)
+nums_prueba_estra.noNa$clasificacion<-as.factor(nums_prueba_estra.noNa$clasificacion)
+
+knnEntrenamiento <- train(clasificacion ~., data = nums_estra.noNa, method = "knn",
+                          trControl=trctrl,
+                          preProcess = c("center","scale"), tuneLength=10)
+
+#Usando conjunto de entrenamiento provisto por kaggle
+predict_knn_entre <- predict(knnEntrenamiento, newdata = nums_prueba_estra.noNa)
+cfm_knn<-confusionMatrix(nums_prueba_estra.noNa$clasificacion,predict_knn_entre)
+
+#Usando conjunto de prueba provisto por kaggle prediciendo SalePrice
+numeros_pkaggle<-dplyr::select_if(datos_prueba_kaggle, is.numeric)
+numeros_pkaggle.noNa <- numeros_pkaggle[complete.cases(numeros_pkaggle),]
+
+nums_estra.noNa$clasificacion <- NULL
+
+knnEntrenamiento_2<- train(SalePrice ~., data = nums_estra.noNa, method = "knn",
+                          trControl=trctrl,
+                          preProcess = c("center","scale"), tuneLength=10)
+
+predict_knn_entre <- predict(knnEntrenamiento_2, newdata = numeros_pkaggle.noNa)
+
